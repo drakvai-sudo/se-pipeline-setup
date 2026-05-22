@@ -1,0 +1,90 @@
+version: "3.9"
+
+# Infrastructure keys are fixed — they are internal to this Docker network.
+# User-configurable keys (GROQ_API_KEY, DEEPSEEK_API_KEY, SLACK_WEBHOOK_URL)
+# are read from .env at runtime so they can be changed without restarting containers.
+x-app-env: &app-env
+  POSTGRES_URL: postgresql+psycopg://postgres:717273chukwu@postgres:5432/se_pipeline
+  REDIS_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  APP_ENV: production
+  ENV_FILE_PATH: /app/.env
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 717273chukwu
+      POSTGRES_DB: se_pipeline
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d se_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    image: drakvai/drakvai-sudo:se-pipeline-latest
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: drakvai/drakvai-sudo:se-pipeline-latest
+    entrypoint: ["/app/deploy/scripts/docker-entrypoint.sh"]
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./.env:/app/.env:rw
+      - hf_cache:/hf_cache
+    restart: unless-stopped
+
+  worker:
+    image: drakvai/drakvai-sudo:se-pipeline-latest
+    command: ["python", "-m", "celery", "-A", "workers.celery_app", "worker",
+              "--loglevel=info", "--concurrency=2"]
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./.env:/app/.env:rw
+      - hf_cache:/hf_cache
+    restart: unless-stopped
+
+  beat:
+    image: drakvai/drakvai-sudo:se-pipeline-latest
+    command: ["python", "-m", "celery", "-A", "workers.celery_app", "beat",
+              "--loglevel=info"]
+    environment: *app-env
+    depends_on:
+      - worker
+    volumes:
+      - ./.env:/app/.env:rw
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  hf_cache:
