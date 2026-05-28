@@ -85,7 +85,7 @@ set API_READY=
 for /l %%i in (1,1,20) do (
     if not defined API_READY (
         timeout /t 4 /nobreak >nul
-        curl -sf http://localhost:8000/health >nul 2>&1
+        curl -sf http://localhost:8000/docs >nul 2>&1
         if not errorlevel 1 set API_READY=1
     )
 )
@@ -125,25 +125,31 @@ if defined GROQ_KEY (
 )
 echo.
 
-REM ── 7. Install CLI wrapper ───────────────────
-echo Installing se-pipeline CLI...
+REM ── 7. Install CLI binary ────────────────────
+echo ============================================
+echo  Installing se-pipeline CLI
+echo ============================================
+echo.
+echo Downloading se-pipeline CLI binary from GitHub Releases...
 echo.
 
 set CLI_DIR=%USERPROFILE%\.local\bin
+set CLI_BIN=%CLI_DIR%\se-pipeline.exe
+set CLI_URL=https://github.com/drakvai-sudo/se-pipeline-releases/releases/latest/download/se-pipeline-windows.exe
+
 if not exist "%CLI_DIR%" mkdir "%CLI_DIR%"
 
-set CLI_WRAPPER=%CLI_DIR%\se-pipeline.bat
+powershell -NoProfile -Command ^
+    "Invoke-WebRequest -Uri '%CLI_URL%' -OutFile '%CLI_BIN%' -UseBasicParsing"
+if errorlevel 1 (
+    echo [WARN] CLI download failed. Check your internet connection.
+    echo        Download manually from:
+    echo        https://github.com/drakvai-sudo/se-pipeline-releases/releases
+    goto :skip_cli
+)
+echo [OK] CLI installed to %CLI_BIN%
 
-(
-echo @echo off
-echo docker compose --project-directory "%SETUP_DIR%" exec api se-pipeline %%*
-echo exit /b %%errorlevel%%
-) > "%CLI_WRAPPER%"
-
-echo [OK] CLI installed to %CLI_WRAPPER%
-echo.
-
-REM Add CLI_DIR to user PATH if not already there
+REM -- 7b. Ensure CLI_DIR is on PATH --
 echo %PATH% | find /i "%CLI_DIR%" >nul 2>&1
 if errorlevel 1 (
     setx PATH "%CLI_DIR%;%PATH%" >nul 2>&1
@@ -152,6 +158,11 @@ if errorlevel 1 (
 ) else (
     echo [OK] %CLI_DIR% is already on PATH.
 )
+goto :after_cli
+
+:skip_cli
+echo [WARN] CLI install skipped. Run setup.bat again to retry.
+:after_cli
 echo.
 
 REM ── 8. Done ───────────────────────────────────

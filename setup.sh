@@ -60,7 +60,7 @@ echo "Waiting for API to be ready..."
 API_READY=
 for i in $(seq 1 20); do
     sleep 4
-    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    if curl -sf http://localhost:8000/docs >/dev/null 2>&1; then
         API_READY=1
         break
     fi
@@ -106,25 +106,50 @@ else
 fi
 echo ""
 
-# ── 7. Install CLI wrapper ───────────────────────
-echo "Installing se-pipeline CLI..."
+# ── 7. Install CLI binary ────────────────────────
+echo "============================================"
+echo " Installing se-pipeline CLI"
+echo "============================================"
+echo ""
+echo "Downloading se-pipeline CLI binary from GitHub Releases..."
 echo ""
 
 CLI_DIR="$HOME/.local/bin"
 mkdir -p "$CLI_DIR"
 
-cat > "$CLI_DIR/se-pipeline" <<EOF
-#!/usr/bin/env bash
-exec docker compose --project-directory "$SETUP_DIR" exec api se-pipeline "\$@"
-EOF
-chmod +x "$CLI_DIR/se-pipeline"
-echo "[OK] CLI installed to $CLI_DIR/se-pipeline"
-echo ""
+OS="$(uname -s)"
+ARCH="$(uname -m)"
 
-# Add to PATH if not already there
+if [ "$OS" = "Darwin" ]; then
+    if [ "$ARCH" = "arm64" ]; then
+        CLI_ASSET="se-pipeline-darwin-arm64"
+    else
+        CLI_ASSET="se-pipeline-darwin-x86_64"
+    fi
+elif [ "$OS" = "Linux" ]; then
+    CLI_ASSET="se-pipeline-linux"
+else
+    echo "[WARN] Unsupported OS: $OS. Download manually from:"
+    echo "       https://github.com/drakvai-sudo/se-pipeline-releases/releases"
+    CLI_ASSET=""
+fi
+
+if [ -n "$CLI_ASSET" ]; then
+    CLI_URL="https://github.com/drakvai-sudo/se-pipeline-releases/releases/latest/download/$CLI_ASSET"
+    CLI_BIN="$CLI_DIR/se-pipeline"
+    if curl -fsSL "$CLI_URL" -o "$CLI_BIN"; then
+        chmod +x "$CLI_BIN"
+        echo "[OK] CLI installed to $CLI_BIN"
+    else
+        echo "[WARN] CLI download failed. Check your internet connection."
+        echo "       Download manually from: https://github.com/drakvai-sudo/se-pipeline-releases/releases"
+    fi
+fi
+
+# -- 7b. Ensure CLI_DIR is on PATH --
 if [[ ":$PATH:" != *":$CLI_DIR:"* ]]; then
     SHELL_RC="$HOME/.bashrc"
-    [ -n "$ZSH_VERSION" ] && SHELL_RC="$HOME/.zshrc"
+    [ -n "${ZSH_VERSION:-}" ] && SHELL_RC="$HOME/.zshrc"
     echo "" >> "$SHELL_RC"
     echo "# se-pipeline CLI" >> "$SHELL_RC"
     echo "export PATH=\"$CLI_DIR:\$PATH\"" >> "$SHELL_RC"
