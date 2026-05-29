@@ -38,12 +38,15 @@ services:
 
   migrate:
     image: drakvai/drakvai-sudo:se-pipeline-latest
+    command: ["python", "scripts/bootstrap.py"]
     environment: *app-env
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./.env:/app/.env:rw
     restart: "no"
 
   api:
